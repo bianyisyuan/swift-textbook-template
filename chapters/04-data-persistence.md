@@ -3,122 +3,156 @@
 > 執筆者：卞宜璇
 > 最終更新：2026-06-03
 
-## この章で学ぶこと
+import SwiftUI
+import SwiftData
 
-（この章で扱うトピックの概要を2〜3行で書く。自分の言葉で。）
+// MARK: - SwiftDataモデル
+@Model
+class Memo {
+    var title: String
+    var content: String
+    var createdAt: Date
+    var isFavorite: Bool
 
-例：この章では、AppStorageとSwiftDataを使ってアプリのデータを端末に永続的に保存する方法を学ぶ。具体的にはSwiftDataを使ったメモアプリを題材として、@Modelでデータモデルを定義し、modelContextを使ったデータ操作、@Queryによる動的なデータ取得、そして@AppStorageによるユーザー設定の保存を実装する。
+    init(title: String, content: String, createdAt: Date = .now, isFavorite: Bool = false) {
+        self.title = title
+        self.content = content
+        self.createdAt = createdAt
+        self.isFavorite = isFavorite
+    }
+}
 
-## 模範コードの全体像
+// MARK: - メインビュー
+struct ContentView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Memo.createdAt, order: .reverse) private var memos: [Memo]
+    @AppStorage("sortByFavorite") private var sortByFavorite: Bool = false
+    @AppStorage("userName") private var userName: String = ""
+    @State private var isShowingSettings = false
 
-（教員から配布された模範コードをここに貼り付ける）
+    // 表示用のフィルター/ソート済みのメモ一覧
+    var displayedMemos: [Memo] {
+        if sortByFavorite {
+            // お気に入りがONのものを優先して上に、その他は作成日時順
+            return memos.sorted { $0.isFavorite && !$1.isFavorite }
+        } else {
+            return memos
+        }
+    }
 
-```swift
-// ここに模範コード全体を貼る
-```
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(displayedMemos) { memo in
+                    NavigationLink(destination: MemoEditView(memo: memo)) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(memo.title.isEmpty ? "無題のメモ" : memo.title)
+                                    .font(.headline)
+                                Text(memo.createdAt, style: .date)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if memo.isFavorite {
+                                Image(systemName: "star.fill")
+                                    .foregroundStyle(.yellow)
+                            }
+                        }
+                    }
+                }
+                .onDelete(perform: deleteMemos)
+            }
+            .navigationTitle(userName.isEmpty ? "マイメモ" : "\(userName)のメモ")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        isShowingSettings = true
+                    } label: {
+                        Image(systemName: "gear")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: addMemo) {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $isShowingSettings) {
+                SettingsView(userName: $userName, sortByFavorite: $sortByFavorite)
+            }
+        }
+    }
 
-**このアプリは何をするものか：**
+    // メモの追加
+    private func addMemo() {
+        let newMemo = Memo(title: "新規メモ", content: "")
+        modelContext.insert(newMemo)
+    }
 
-（アプリの動作を自分の言葉で説明する。スクリーンショットを貼ってもよい。）
+    // メモの削除
+    private func deleteMemos(offsets: IndexSet) {
+        for index in offsets {
+            modelContext.delete(displayedMemos[index])
+        }
+    }
+}
 
-## コードの詳細解説
+// MARK: - 編集画面（@Bindableの活用）
+struct MemoEditView: View {
+    @Bindable var memo: Memo
 
-### SwiftDataモデル（@Model）
+    var body: some View {
+        Form {
+            Section("タイトル") {
+                TextField("タイトル", text: $memo.title)
+            }
+            Section("内容") {
+                TextEditor(text: $memo.content)
+                    .frame(minHeight: 200)
+            }
+            Section {
+                Toggle("お気に入り", isOn: $memo.isFavorite)
+            }
+        }
+        .navigationTitle("メモを編集")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
 
-```swift
-// 該当部分のコードを抜粋して貼る
-```
+// MARK: - 設定画面（AppStorageの活用）
+struct SettingsView: View {
+    @Binding var userName: String
+    @Binding var sortByFavorite: Bool
+    @Environment(\.dismiss) private var dismiss
 
-**何をしているか：**
-（この部分が果たしている役割を説明する）
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("ユーザー設定") {
+                    TextField("あなたの名前", text: $userName)
+                }
+                Section("表示設定") {
+                    Toggle("お気に入りを上に表示", isOn: $sortByFavorite)
+                }
+                Section {
+                    Text("設定はアプリを閉じても保存されます")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("設定")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完了") { dismiss() }
+                }
+            }
+        }
+    }
+}
 
-**なぜこう書くのか：**
-（別の書き方ではなく、この書き方が選ばれている理由を説明する）
-
-**もしこう書かなかったら：**
-（この部分を省略したり変えたりすると何が起きるか。実際に試した結果があればここに書く）
-
----
-
-### データの追加・削除（modelContext）
-
-```swift
-// 該当部分のコードを抜粋して貼る
-```
-
-**何をしているか：**
-
-**なぜこう書くのか：**
-
-**もしこう書かなかったら：**
-
----
-
-### @Queryによるデータ取得
-
-```swift
-// 該当部分のコードを抜粋して貼る
-```
-
-**何をしているか：**
-
-**なぜこう書くのか：**
-
-**もしこう書かなかったら：**
-
----
-
-### @AppStorageによる設定保存
-
-```swift
-// 該当部分のコードを抜粋して貼る
-```
-
-**何をしているか：**
-
-**なぜこう書くのか：**
-
-**もしこう書かなかったら：**
-
----
-
-（必要に応じてセクションを増やす）
-
-## 新しく学んだSwiftの文法・API
-
-| 項目 | 説明 | 使用例 |
-|------|------|--------|
-| 例：`@Model` | SwiftDataでオブジェクトを永続化するためのマクロ | `@Model final class Memo { ... }` |
-| 例：`@Query` | データベースからデータを取得し、変更を自動で反映するプロパティラッパー | `@Query var memos: [Memo]` |
-| | | |
-| | | |
-| | | |
-
-## 自分の実験メモ
-
-（模範コードを改変して試したことを書く）
-
-**実験1：**
-- やったこと：
-- 結果：
-- わかったこと：
-
-**実験2：**
-- やったこと：
-- 結果：
-- わかったこと：
-
-## AIに聞いて特に理解が深まった質問 TOP3
-
-1. **質問：**
-   **得られた理解：**
-
-2. **質問：**
-   **得られた理解：**
-
-3. **質問：**
-   **得られた理解：**
-
-## この章のまとめ
-
-（この章で学んだ最も重要なことを、未来の自分が読み返したときに役立つように書く）
+#Preview {
+    ContentView()
+        .modelContainer(for: Memo.self, inMemory: true)
+}
